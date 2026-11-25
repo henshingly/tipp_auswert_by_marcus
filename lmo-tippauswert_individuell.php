@@ -100,7 +100,8 @@ if ($_SESSION["lmotipperok"] != 5) {
 */
 
 // Datei gesamt.aus in Array einlesen... evtl. Pfad anpassen
-$auswertdatei = PATH_TO_ADDONDIR."/tipp/tipps/auswert/gesamt.aus";
+// (Tippverzeichnis aus der Addon-Konfiguration; Rückfall auf den alten Standardpfad)
+$auswertdatei = PATH_TO_ADDONDIR."/tipp/".(isset($tipp_dirtipp) && $tipp_dirtipp != '' ? $tipp_dirtipp : "tipps/")."auswert/gesamt.aus";
 
 // Prüfen ob die Datei vorhanden ist
 if (is_file($auswertdatei)) {
@@ -112,8 +113,13 @@ else {
 }
 
 // Tippmodus aus congig-datei auslesen
-$tippmodus = @file(PATH_TO_LMO."/config/tipp/cfg.txt");
-$tippmodus = substr($tippmodus[34], 10, 1);  // 0=Tendenz  1=Ergebnis
+if (isset($tipp_tippmodus)) {
+  $tippmodus = (int)$tipp_tippmodus;  // 0=Tendenz  1=Ergebnis (aus der Addon-Konfiguration)
+}
+else {
+  $tippmodus = @file(PATH_TO_LMO."/config/tipp/cfg.txt");
+  $tippmodus = substr($tippmodus[34] ?? '', 10, 1);  // 0=Tendenz  1=Ergebnis
+}
 
 if ($tippmodus == 0) {
   $var_prozrichtig = "Sp%";  // Prozent Spieltipp richtig - Standard "Sp%"
@@ -178,6 +184,7 @@ $htmlhead = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
       "http://www.w3.org/TR/html4/loose.dtd">
 <html>
 <head>
+ <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
  <title>'.$title.'</title>
 <style type="text/css">
 body {
@@ -283,13 +290,16 @@ $htmlfoot = '<hr width="195" align="right" />
 /*------------------------------------------------------------------------------
 /* Formular anzeigen, noch nichts wurde ausgewählt
 /*------------------------------------------------------------------------------*/
-if (!$_POST["iswas"]) {
+$htmlbody = '';
+$joker = 0;
+$team = 0;
+if (empty($_POST["iswas"])) {
 
   $htmlbody .= '
   <body>
   <h2>Individuelle Auswertung</h2>
   <table border="1" cellspacing="0" cellpadding="5" align="center"><tr><td align="center">
-    <form name="formular" method="post" action="'.$_SERVER["REQUEST_URI"].'">
+    <form name="formular" method="post" action="'.htmlspecialchars($_SERVER["REQUEST_URI"], ENT_QUOTES).'">
   <table border="0" cellspacing="0" cellpadding="0" align="center">
     <tr> <td colspan="2" align="left"><br />Die gewünschten Ligen markieren.<br />Anschließend Button klicken.<br>&nbsp;
     </td> </tr>
@@ -321,7 +331,7 @@ $htmlbody .= '<tr><td align="center" nowrap="nowrap">
 //******************************************************************************
 }
 else {  // wenn der OK Button geklickt wurde
-  $zeit1 = microtime();  // Zeit nehmen Start
+  $zeit1 = microtime(true);  // Zeit nehmen Start
 
   // eingeloggten User ermitteln
   $username = "";
@@ -339,7 +349,7 @@ else {  // wenn der OK Button geklickt wurde
   for ($i = 1; $i <= $anzligen; $i++) {
     $ligavar = "liga".$i;
     // checken welche Ligen gewählt wurden
-    if ($_POST[$ligavar] == $i)  {
+    if (isset($_POST[$ligavar]) && $_POST[$ligavar] == $i)  {
       array_push($ligenkurz, 'TP'.$i);     //-- ligenkürzel = 'TP'.$i
       array_push($anzgetipptkurz, 'SG'.$i);  //-- kürzel = 'SG'.$i
       array_push($jokerkurz, 'P'.$i);      //-- joker Punkte
@@ -352,7 +362,7 @@ else {  // wenn der OK Button geklickt wurde
   if ($zligen > 0) {
 
     $auswert = array();  //ausgefiltertes Array
-    $goal = array(array(),array());  // 2dimensionales Array anlegen
+    $goal = array();  // 2dimensionales Array anlegen
 
     $anzgoal = -1;
 
@@ -362,16 +372,16 @@ else {  // wenn der OK Button geklickt wurde
       $posname = strpos($array[$i], "[");
       if ($posname !== false) {
         // gefundenen Namen ins Array speichern
-        $goal[++$anzgoal][0] = $array[$i];
+        $goal[++$anzgoal] = array($array[$i], 0, 0, 0, '');
       }
 
       // foreach1 ermittelt die erzielten Punkte
       foreach ($ligenkurz as $value) {
         $value = $value."=";  // = muss stehen da bei TP1 auch TP10 TP11 erfasst
         $pos1 = strpos($array[$i], $value);
-        if ($pos1 !== false) {
+        if ($pos1 !== false && $anzgoal >= 0) {
           //punkte gleich Array dazu addieren
-          $goal[$anzgoal][1] += ltrim(strrchr($array[$i],'='),'=');
+          $goal[$anzgoal][1] += (int)ltrim(strrchr($array[$i],'='),'=');
         }
       }  // foreach1 end
 
@@ -379,9 +389,9 @@ else {  // wenn der OK Button geklickt wurde
       foreach ($anzgetipptkurz as $value) {
         $value = $value."=";  // = muss stehen da bei TP1 auch TP10 TP11 erfasst
         $pos1 = strpos($array[$i], $value);
-        if ($pos1 !== false) {
+        if ($pos1 !== false && $anzgoal >= 0) {
           // Anzahl getippter Spiele gleich Array dazu addieren
-          $goal[$anzgoal][2] += ltrim(strrchr($array[$i],'='),'=');
+          $goal[$anzgoal][2] += (int)ltrim(strrchr($array[$i],'='),'=');
         }
       }  // foreach2 end
 
@@ -391,9 +401,9 @@ else {  // wenn der OK Button geklickt wurde
         foreach ($jokerkurz as $value) {
           $value = $value."=";  // = muss stehen da bei TP1 auch TP10 TP11 erfasst
           $pos1 = strpos($array[$i], $value);
-          if ($pos1 !== false) {
+          if ($pos1 !== false && $anzgoal >= 0) {
             // Anzahl getippter Spiele gleich Array dazu addieren
-            $goal[$anzgoal][3] += ltrim(strrchr($array[$i],'='),'=');
+            $goal[$anzgoal][3] += (int)ltrim(strrchr($array[$i],'='),'=');
             //var. zeigt ob jokerpunkte genutzt werden, wenn ja joker=1
             $joker = 1;
           }
@@ -404,7 +414,7 @@ else {  // wenn der OK Button geklickt wurde
       if ($show_team == 1) {
         // Teamname ermitteln, wenn gefunden in Array speichern
         $posname = strpos($array[$i], "Team=");
-        if ($posname !== false)  {
+        if ($posname !== false && $anzgoal >= 0)  {
           //gefundenen namen ins Array speichern
           $goal[$anzgoal][4] = ltrim(strrchr($array[$i],'='),'=');
           //var. zeigt ob teams genutzt werden muss, wenn ja team=1
@@ -425,7 +435,7 @@ else {  // wenn der OK Button geklickt wurde
     // Schleife wird entsprechend der Anzahl der Elemente im Array $zahlen wiederholt
     for($y = 0; $y < $anzahl_elemente; $y++) {
       //Jedes Element wird einzelen angesprochen und verschoben wenn das linke Element grösser ist als der rechte
-      for($x = 0; $x < $anzahl_elemente; $x++) {
+      for($x = 0; $x < $anzahl_elemente - 1; $x++) {
         // In diesem Beispiel aufsteigend.
         // Möchte man absteigend sortieren, einfach das grösser Zeichen mit einem kleiner Zeichen tauschen
 
@@ -540,7 +550,9 @@ else {  // wenn der OK Button geklickt wurde
         // Ausgabe der Platzierung wenn:
         // 1. Punkte ungleich dem vorgänger
         // 2. Punkte gleich, aber Anzahl getippter Spiele unterschiedlich
-        if (($goal[$i][1] != $goal[$i-1][1]) or (($goal[$i][1] == $goal[$i-1][1]) and (($goal[$i][2] != $goal[$i-1][2])))) {
+        $vorg1 = $i > 0 ? $goal[$i-1][1] : null;  // Punkte des Vorgängers
+        $vorg2 = $i > 0 ? $goal[$i-1][2] : null;  // getippte Spiele des Vorgängers
+        if (($goal[$i][1] != $vorg1) or (($goal[$i][1] == $vorg1) and (($goal[$i][2] != $vorg2)))) {
 
           $platz2++;
 
@@ -642,7 +654,7 @@ else {  // wenn der OK Button geklickt wurde
     $htmlbody .= '<p align="center">Stand vom '.date("d.m.Y").' - '.date("H:i") .' Uhr</p>
 <p align="center"><a href="lmo-tippauswert_individuell.php">zurück zur Auswahl</a>&nbsp;|&nbsp;<a href="lmo.php?action=tipp">zurück zum Tippspiel</a></p>';
 
-    $zeit2 = microtime();  //stopp //echo "<br>Berechnung dauerte" . ($zeit2-$zeit1);
+    $zeit2 = microtime(true);  //stopp //echo "<br>Berechnung dauerte" . ($zeit2-$zeit1);
 
   }
   else {  // keine liga gewählt
